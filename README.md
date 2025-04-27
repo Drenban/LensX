@@ -63,3 +63,91 @@ C++计算高性能指标（如VaR），返回给Python可视化。
 
 输出：交易性能图表、风险报告。
 
+量化策略示例：均线交叉（C++与Python）
+1. 策略逻辑
+
+规则：
+计算短期均线（SMA10）和长期均线（SMA50）。
+当SMA10上穿SMA50，买入；当SMA10下穿SMA50，卖出。
+
+
+分工：
+Python：数据获取、回测、可视化。
+C++：计算均线（性能敏感部分），供Python调用。
+
+
+
+2. C++代码（均线计算）
+文件：sma_calculator.cpp
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <vector>
+
+std::vector<double> calculate_sma(const std::vector<double>& prices, int period) {
+    std::vector<double> sma;
+    if (prices.size() < period) return sma;
+
+    for (size_t i = period - 1; i < prices.size(); ++i) {
+        double sum = 0.0;
+        for (size_t j = i - period + 1; j <= i; ++j) {
+            sum += prices[j];
+        }
+        sma.push_back(sum / period);
+    }
+    return sma;
+}
+
+PYBIND11_MODULE(sma_calculator, m) {
+    m.def("calculate_sma", &calculate_sma, "Calculate Simple Moving Average");
+}
+
+编译：
+c++ -O3 -Wall -shared -std=c++11 -fPIC `python3 -m pybind11 --includes` sma_calculator.cpp -o sma_calculator`python3-config --extension-suffix`
+
+3. Python代码（数据处理与回测）
+文件：strategy.py
+import pandas as pd
+import matplotlib.pyplot as plt
+import sma_calculator  # C++模块
+
+# 模拟数据（实际项目用Tushare/CCXT获取）
+data = pd.DataFrame({
+    'close': [100, 101, 102, 103, 104, 105, 106, 107, 108, 109] * 10
+})
+
+# 调用C++计算均线
+prices = data['close'].tolist()
+sma10 = sma_calculator.calculate_sma(prices, 10)
+sma50 = sma_calculator.calculate_sma(prices, 50)
+
+# 转换为DataFrame
+data['sma10'] = pd.Series(sma10, index=data.index[-len(sma10):])
+data['sma50'] = pd.Series(sma50, index=data.index[-len(sma50):])
+
+# 交易信号
+data['signal'] = 0
+data.loc[data['sma10'] > data['sma50'], 'signal'] = 1
+data.loc[data['sma10'] < data['sma50'], 'signal'] = -1
+
+# 简单回测
+data['returns'] = data['close'].pct_change()
+data['strategy_returns'] = data['returns'] * data['signal'].shift()
+cumulative_returns = (1 + data['strategy_returns']).cumprod()
+
+# 可视化
+plt.figure(figsize=(10, 6))
+plt.plot(cumulative_returns, label='Strategy Returns')
+plt.legend()
+plt.savefig('strategy_returns.png')
+
+4. 运行步骤
+
+编译C++代码生成sma_calculator模块。
+运行Python脚本strategy.py，生成回测结果和图表。
+扩展：将C++模块替换为实时数据处理逻辑，连接交易所API。
+
+5. 扩展建议
+
+实时交易：用C++实现WebSocket数据流处理，Python生成信号。
+优化：用C++重写回测循环，加速大规模历史数据处理。
+风控：C++计算实时VaR，Python生成风险报告。
